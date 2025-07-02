@@ -9,14 +9,10 @@ import matplotlib.pyplot as plt
 from obspy import Stream, Trace, UTCDateTime
 import time
 
-# 设置matplotlib支持中文
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
-plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
-
 class ScrollingWaveformDisplay(QWidget):
     """滚动波形显示组件 - 实现在已加载波形上的滑动窗口模拟"""
     
-    def __init__(self, window_length=60.0):  # 默认窗口长度改为60秒
+    def __init__(self, window_length=60.0):
         """
         初始化滚动波形显示组件
         
@@ -92,7 +88,7 @@ class ScrollingWaveformDisplay(QWidget):
         self.window_slider.valueChanged.connect(self.change_window_length)
         control_panel.addWidget(self.window_slider)
         
-        self.window_value_label = QLabel(f"{self.window_length}秒")
+        self.window_value_label = QLabel(f"{self.window_length}s")
         control_panel.addWidget(self.window_value_label)
         
         # 自动缩放Y轴
@@ -124,7 +120,7 @@ class ScrollingWaveformDisplay(QWidget):
         self.position_slider.valueChanged.connect(self.slider_position_changed)
         position_layout.addWidget(self.position_slider, 1)
         
-        self.position_label = QLabel("0.0秒 / 0.0秒")
+        self.position_label = QLabel("0.0s / 0.0s")
         position_layout.addWidget(self.position_label)
         
         position_widget = QWidget()
@@ -205,7 +201,7 @@ class ScrollingWaveformDisplay(QWidget):
             ax.set_position([box.x0, box.y0, box.width, box.height * 0.8])
             
             if i == num_traces - 1:  # 最后一个子图添加x轴标签
-                ax.set_xlabel('时间 (秒)', fontsize=10)
+                ax.set_xlabel('时间 (s)', fontsize=10)
             else:
                 ax.set_xticklabels([])  # 非最后一个子图隐藏x轴刻度标签
             
@@ -229,7 +225,7 @@ class ScrollingWaveformDisplay(QWidget):
         # 添加标题
         if num_traces > 0:
             start_time_str = self.stream[0].stats.starttime.strftime('%Y-%m-%d %H:%M:%S')
-            self.figure.suptitle(f"地震波形实时监测 - {start_time_str}", fontsize=14, y=0.99)
+            self.figure.suptitle(f"地震波形监测 - {start_time_str}", fontsize=14, y=0.99)
         
         # 优化布局 - 增加水平方向的空间
         self.figure.tight_layout(pad=1.0, rect=[0.01, 0.03, 0.99, 0.95])
@@ -312,7 +308,7 @@ class ScrollingWaveformDisplay(QWidget):
         # 更新标题显示当前时间
         if len(self.stream) > 0:
             current_time = self.stream[0].stats.starttime + self.current_position
-            title = f"地震波形实时监测 - {current_time.strftime('%Y-%m-%d %H:%M:%S')} (位置: {self.current_position:.1f}秒)"
+            title = f"地震波形监测 - {current_time.strftime('%Y-%m-%d %H:%M:%S')} (位置: {self.current_position:.1f}s)"
             self.figure.suptitle(title, fontsize=14, y=0.99)
         
         # 重绘画布
@@ -326,10 +322,7 @@ class ScrollingWaveformDisplay(QWidget):
             
         self.is_streaming = True
         self.play_pause_btn.setText("暂停")
-        if self.speed_factor == -1:
-            self.status_label.setText("正在模拟波形滚动 (速度: 超快)")
-        else:
-            self.status_label.setText(f"正在模拟波形滚动 (速度: {self.speed_factor}x)")
+        self.status_label.setText(f"正在模拟波形滚动 (速度: {self.speed_factor}x)")
         
         # 启动定时器，每100毫秒更新一次
         self.scroll_timer.start(100)
@@ -361,14 +354,14 @@ class ScrollingWaveformDisplay(QWidget):
         
         if self.is_streaming:
             if self.speed_factor == -1:
-                self.status_label.setText("正在模拟波形滚动 (速度: 超快)")
+                self.status_label.setText(f"正在模拟波形滚动 (速度: 超快)")
             else:
                 self.status_label.setText(f"正在模拟波形滚动 (速度: {self.speed_factor}x)")
     
     def change_window_length(self, value):
         """更改显示窗口长度"""
         self.window_length = float(value)
-        self.window_value_label.setText(f"{self.window_length}秒")
+        self.window_value_label.setText(f"{self.window_length}s")
         
         # 更新所有轴的x范围
         for ax in self.axes.values():
@@ -400,7 +393,7 @@ class ScrollingWaveformDisplay(QWidget):
     
     def update_position_label(self):
         """更新位置标签"""
-        self.position_label.setText(f"{self.current_position:.1f}秒 / {self.max_position:.1f}秒")
+        self.position_label.setText(f"{self.current_position:.1f}s / {self.max_position:.1f}s")
     
     def reset_position(self):
         """重置到波形起始位置"""

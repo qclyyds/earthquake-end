@@ -17,6 +17,7 @@ from obspy import read, read_inventory, UTCDateTime
 import pandas as pd
 from datetime import datetime
 from PyQt5.QtGui import QPixmap, QIcon, QFont
+import os
 
 # 导入我们的地震处理功能文件
 from seismic_processor import (WaveformLoadThread, PhaseDetectionThread, 
@@ -32,6 +33,21 @@ class TimeWindowDialog(QDialog):
         self.setWindowTitle("选择加载波形方式")
         self.resize(400, 300)
         
+         # 添加分块处理参数
+        self.current_file = None  # 当前加载的文件路径
+        self.chunk_mode = False  # 是否使用分块模式
+        self.chunk_size = None  # 分块大小（秒）
+        self.time_window = {  # 时间窗口
+            'start_time': None,
+            'end_time': None
+        }
+        
+        # 添加分块导航参数
+        self.current_chunk_index = 0  # 当前分块索引
+        self.total_chunks = 0  # 总分块数
+        self.original_start_time = None  # 原始波形的起始时间
+        self.original_end_time = None  # 原始波形的结束时间
+
         # 初始化起始和结束时间
         self.start_time = start_time or UTCDateTime()
         self.end_time = end_time or self.start_time + 3600  # 默认1小时
@@ -121,7 +137,7 @@ class SeismicPhasePicker(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Seismic Phase Picker')  # 设置窗口标题
-        self.setGeometry(500, 100, 1200, 1000)  # 设置窗口大小和位置
+        self.setGeometry(200, 100, 1800, 1000)  # 设置窗口大小和位置
         
         # 初始化变量
         self.stream = None
@@ -154,6 +170,8 @@ class SeismicPhasePicker(QMainWindow):
     
     def setup_ui(self):
         """设置用户界面"""
+        
+
         # 添加进度条
         self.status_label = QLabel("就绪")
         self.progress_bar = QProgressBar()
@@ -168,6 +186,26 @@ class SeismicPhasePicker(QMainWindow):
         toolbar = QToolBar()
         self.addToolBar(toolbar)
         
+         # 添加分块导航按钮
+        self.prev_chunk_btn = QAction(QIcon("icons/prev.png") if os.path.exists("icons/prev.png") else QIcon(), "上一段", self)
+        self.prev_chunk_btn.setStatusTip("加载上一个数据块")
+        self.prev_chunk_btn.triggered.connect(self.load_previous_chunk)
+        self.prev_chunk_btn.setEnabled(False)  # 初始禁用
+        
+        self.next_chunk_btn = QAction(QIcon("icons/next.png") if os.path.exists("icons/next.png") else QIcon(), "下一段", self)
+        self.next_chunk_btn.setStatusTip("加载下一个数据块")
+        self.next_chunk_btn.triggered.connect(self.load_next_chunk)
+        self.next_chunk_btn.setEnabled(False)  # 初始禁用
+        
+        # 添加分块导航状态标签
+        self.chunk_status_label = QLabel("未使用分块模式")
+        
+        # 将分块导航按钮添加到工具栏
+        toolbar.addSeparator()
+        toolbar.addAction(self.prev_chunk_btn)
+        toolbar.addAction(self.next_chunk_btn)
+        toolbar.addWidget(self.chunk_status_label)
+
         # 添加模型选择
         model_label = QLabel("模型：")
         toolbar.addWidget(model_label)
@@ -341,6 +379,10 @@ class SeismicPhasePicker(QMainWindow):
                     start_time = min([tr.stats.starttime for tr in temp_stream])
                     end_time = max([tr.stats.endtime for tr in temp_stream])
                     
+                    # 保存原始时间范围
+                    self.original_start_time = start_time
+                    self.original_end_time = end_time
+                    
                     # 显示时间窗口选择对话框
                     time_dialog = TimeWindowDialog(self, start_time, end_time)
                     if time_dialog.exec_() == QDialog.Accepted:
@@ -353,18 +395,39 @@ class SeismicPhasePicker(QMainWindow):
                             self.time_window['end_time'] = None
                             self.chunk_size = None
                             
+                            # 禁用分块导航按钮
+                            self.prev_chunk_btn.setEnabled(False)
+                            self.next_chunk_btn.setEnabled(False)
+                            self.chunk_status_label.setText("未使用分块模式")
+                            
                             # 在线程中加载波形
                             self.load_thread = WaveformLoadThread(filename)
                             
                         elif params['mode'] == 'chunk':
                             # 分块处理模式
                             self.chunk_mode = True
-                            self.time_window['start_time'] = None
-                            self.time_window['end_time'] = None
+                            self.time_window['start_time'] = start_time
+                            self.time_window['end_time'] = end_time
                             self.chunk_size = params['chunk_size']
                             
-                            # 在线程中加载波形（加载所有数据，但会在检测阶段分块处理）
-                            self.load_thread = WaveformLoadThread(filename)
+                            # 计算总分块数
+                            total_duration = end_time - start_time
+                            self.total_chunks = int(np.ceil(total_duration / self.chunk_size))
+                            self.current_chunk_index = 0
+                            
+                            # 启用分块导航按钮
+                            self.prev_chunk_btn.setEnabled(False)  # 第一块，禁用上一块按钮
+                            self.next_chunk_btn.setEnabled(self.total_chunks > 1)  # 如果有多个块，启用下一块按钮
+                            
+                            # 更新分块状态标签
+                            self.update_chunk_status_label()
+                            
+                            # 加载第一个数据块
+                            chunk_start = start_time
+                            chunk_end = min(chunk_start + self.chunk_size, end_time)
+                            
+                            # 在线程中加载波形
+                            self.load_thread = WaveformLoadThread(filename, chunk_start, chunk_end)
                         
                         # 连接线程信号
                         self.load_thread.progressChanged.connect(self.update_progress)
@@ -409,12 +472,105 @@ class SeismicPhasePicker(QMainWindow):
     
     def on_waveform_loaded(self, stream):
         """波形加载完成后的回调函数"""
-        self.stream = stream
-        self.update_plot()
-        self.progress_bar.setVisible(False)
-        self.status_label.setText(f"已加载 {len(self.stream)} 个波形通道")
+        if self.chunk_mode:
+            self.on_chunk_loaded(stream)
+        else:
+            self.stream = stream
+            self.update_plot()
+            self.progress_bar.setVisible(False)
+            self.status_label.setText(f"已加载 {len(self.stream)} 个波形通道")
         
         # 不再自动设置滚动波形显示数据，等用户点击实时模拟按钮时再设置
+    
+    def load_previous_chunk(self):
+        """加载上一个数据块"""
+        if not self.chunk_mode or self.current_chunk_index <= 0:
+            return
+        
+        # 更新当前块索引
+        self.current_chunk_index -= 1
+        
+        # 计算时间窗口
+        chunk_start = self.original_start_time + self.current_chunk_index * self.chunk_size
+        chunk_end = min(chunk_start + self.chunk_size, self.original_end_time)
+        
+        # 加载数据块
+        self.load_chunk(chunk_start, chunk_end)
+        
+        # 更新导航按钮状态
+        self.prev_chunk_btn.setEnabled(self.current_chunk_index > 0)
+        self.next_chunk_btn.setEnabled(self.current_chunk_index < self.total_chunks - 1)
+        
+        # 更新状态标签
+        self.update_chunk_status_label()
+
+    def load_next_chunk(self):
+        """加载下一个数据块"""
+        if not self.chunk_mode or self.current_chunk_index >= self.total_chunks - 1:
+            return
+        
+        # 更新当前块索引
+        self.current_chunk_index += 1
+        
+        # 计算时间窗口
+        chunk_start = self.original_start_time + self.current_chunk_index * self.chunk_size
+        chunk_end = min(chunk_start + self.chunk_size, self.original_end_time)
+        
+        # 加载数据块
+        self.load_chunk(chunk_start, chunk_end)
+        
+        # 更新导航按钮状态
+        self.prev_chunk_btn.setEnabled(self.current_chunk_index > 0)
+        self.next_chunk_btn.setEnabled(self.current_chunk_index < self.total_chunks - 1)
+        
+        # 更新状态标签
+        self.update_chunk_status_label()
+
+    def load_chunk(self, start_time, end_time):
+        """加载指定时间范围的数据块"""
+        if not self.current_file:
+            return
+        
+        # 显示进度条
+        self.status_label.setText(f"正在加载数据块 {self.current_chunk_index + 1}/{self.total_chunks}...")
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
+        
+        # 创建并启动加载线程
+        self.load_thread = WaveformLoadThread(self.current_file, start_time, end_time)
+        self.load_thread.progressChanged.connect(self.update_progress)
+        self.load_thread.finished.connect(self.on_chunk_loaded)
+        self.load_thread.error.connect(self.on_thread_error)
+        self.load_thread.statusUpdate.connect(self.update_status)
+        self.load_thread.start()
+
+    def on_chunk_loaded(self, stream):
+        """数据块加载完成后的回调"""
+        self.stream = stream
+        
+        # 清除之前的相位检测结果，因为它们可能不适用于当前分块
+        self.picks = []
+        
+        self.update_plot()
+        self.progress_bar.setVisible(False)
+        self.status_label.setText(f"已加载数据块 {self.current_chunk_index + 1}/{self.total_chunks}，共 {len(self.stream)} 个通道")
+
+    def update_chunk_status_label(self):
+        """更新分块状态标签"""
+        if not self.chunk_mode:
+            self.chunk_status_label.setText("未使用分块模式")
+            return
+        
+        # 计算当前块的时间范围
+        chunk_start = self.original_start_time + self.current_chunk_index * self.chunk_size
+        chunk_end = min(chunk_start + self.chunk_size, self.original_end_time)
+        
+        # 格式化时间
+        start_str = chunk_start.strftime("%Y-%m-%d %H:%M:%S")
+        end_str = chunk_end.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 更新标签
+        self.chunk_status_label.setText(f"块 {self.current_chunk_index + 1}/{self.total_chunks}: {start_str} - {end_str}")
     
     def load_inventory(self):
         """加载ObsPy台站目录"""
@@ -474,9 +630,19 @@ class SeismicPhasePicker(QMainWindow):
     
     def on_phase_detection_finished(self, picks):
         """相位检测线程完成时的回调"""
-        self.picks = picks
+        # 在分块模式下，只保留当前分块内的相位
+        if self.chunk_mode:
+            current_chunk_start = self.original_start_time + self.current_chunk_index * self.chunk_size
+            current_chunk_end = min(current_chunk_start + self.chunk_size, self.original_end_time)
+            
+            # 过滤相位，只保留当前分块内的
+            self.picks = [pick for pick in picks if current_chunk_start <= pick['time'] <= current_chunk_end]
+            self.status_label.setText(f"在当前分块中找到 {len(self.picks)} 个相位到达")
+        else:
+            self.picks = picks
+            self.status_label.setText(f"找到 {len(self.picks)} 个相位到达")
+        
         self.update_plot()
-        self.status_label.setText(f"找到 {len(self.picks)} 个相位到达")
         self.progress_bar.setVisible(False)
     
     def associate_events(self):
@@ -578,17 +744,34 @@ class SeismicPhasePicker(QMainWindow):
             # 为每个子图保留足够的垂直空间，减小比例以留出更多空间
             subplot_height = 0.85 / num_traces if num_traces > 1 else 0.85
             
+            # 计算时间偏移量，用于分块模式下的连续时间轴显示
+            time_offset = 0
+            if self.chunk_mode and self.current_chunk_index > 0:
+                time_offset = self.current_chunk_index * self.chunk_size
+            
             for i, trace in enumerate(self.stream):
                 ax = self.figure.add_subplot(num_traces, 1, i+1)
                 
                 # 绘制波形
                 times = trace.times()
+                
+                # 在分块模式下调整时间轴，使其显示连续的时间
+                if self.chunk_mode:
+                    times = times + time_offset
+                
                 ax.plot(times, trace.data, 'k', linewidth=1.0)
                 
                 # 对每个通道的检测结果显示
                 channel_picks = [p for p in self.picks if p['channel'] == '.'.join(trace.id.split('.', 2)[:2])]
                 for pick in channel_picks:
-                    pick_time = pick['time'] - trace.stats.starttime
+                    # 计算相对于当前分块的时间
+                    if self.chunk_mode:
+                        # 只显示当前分块内的相位
+                        pick_time_relative = pick['time'] - trace.stats.starttime
+                        pick_time = pick_time_relative + time_offset
+                    else:
+                        pick_time = pick['time'] - trace.stats.starttime
+                    
                     color = 'red' if pick['phase'] == 'P' else 'blue'
                     ax.axvline(pick_time, color=color, linestyle='--', alpha=0.7, linewidth=1.5)
                     y_position = ax.get_ylim()[1] * 0.8
@@ -600,7 +783,10 @@ class SeismicPhasePicker(QMainWindow):
                 # 设置标签和坐标轴文字大小
                 ax.set_ylabel(trace.id, fontsize=12)
                 if i == num_traces-1:
-                    ax.set_xlabel('Time (s)', fontsize=12)
+                    if self.chunk_mode:
+                        ax.set_xlabel('Time (s) - Continuous', fontsize=12)
+                    else:
+                        ax.set_xlabel('Time (s)', fontsize=12)
                     # 为最后一个子图增加底部边距
                     plt_pos = ax.get_position()
                     ax.set_position([plt_pos.x0, plt_pos.y0, plt_pos.width, plt_pos.height - 0.02])
@@ -1127,4 +1313,4 @@ def main():
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
-    main() 
+    main()
