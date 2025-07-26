@@ -1231,6 +1231,13 @@ class SeismicPhasePicker(QMainWindow):
         # 重置滚动波形显示并设置波形数据
         self.scrolling_display.set_stream(selected_stream)
         
+        # 如果有相位检测结果，传递给滚动波形显示组件
+        if self.picks:
+            self.scrolling_display.set_picks(self.picks)
+            self.status_label.setText(f"实时监测模式已激活 (显示{len(selected_stream)}个通道，包含{len(self.picks)}个相位标记)")
+        else:
+            self.status_label.setText(f"实时监测模式已激活 (显示{len(selected_stream)}个通道)")
+        
         # 自动启动滚动播放
         self.scrolling_display.start_streaming()
         

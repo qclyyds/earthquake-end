@@ -31,6 +31,7 @@ class ScrollingWaveformDisplay(QWidget):
         self.auto_scale_y = False  # 默认不自动缩放Y轴，保持与原图像一致
         self.is_streaming = False  # 是否正在模拟流
         self.speed_factor = 1.0  # 播放速度
+        self.picks = []  # 存储相位检测结果
         
         # 创建UI
         self.init_ui()
@@ -304,6 +305,35 @@ class ScrollingWaveformDisplay(QWidget):
                     y_min, y_max = -1, 1
                 margin = (y_max - y_min) * 0.1 if y_max > y_min else 0.1
                 self.axes[trace_id].set_ylim(y_min - margin, y_max + margin)
+            
+            # 显示相位检测结果
+            if self.picks:
+                # 获取当前通道的相位检测结果
+                channel_id = '.'.join(trace.id.split('.', 2)[:2])  # 提取通道ID
+                channel_picks = [p for p in self.picks if p['channel'] == channel_id]
+                
+                # 清除之前的相位标记
+                for artist in self.axes[trace_id].lines + self.axes[trace_id].texts:
+                    if artist != self.lines[trace_id]:  # 保留波形线条
+                        artist.remove()
+                
+                # 添加相位标记
+                for pick in channel_picks:
+                    # 计算相位时间相对于当前窗口的位置
+                    pick_time_rel = pick['time'] - (trace.stats.starttime + window_start)
+                    
+                    # 只显示当前窗口内的相位
+                    if 0 <= pick_time_rel <= self.window_length:
+                        # 绘制相位线
+                        color = 'red' if pick['phase'] == 'P' else 'blue'
+                        self.axes[trace_id].axvline(pick_time_rel, color=color, linestyle='--', alpha=0.7, linewidth=1.5)
+                        
+                        # 添加相位标签
+                        y_position = self.axes[trace_id].get_ylim()[1] * 0.8
+                        self.axes[trace_id].text(pick_time_rel + 0.5, y_position,
+                                f"{pick['phase']}\n{pick['probability']:.2f}",
+                                color=color, va='top', fontsize=10, 
+                                bbox=dict(facecolor='white', alpha=0.7, pad=2))
         
         # 更新标题显示当前时间
         if len(self.stream) > 0:
@@ -411,3 +441,14 @@ class ScrollingWaveformDisplay(QWidget):
         self.update_position_label()
         
         self.status_label.setText("已重置到波形起始位置") 
+        
+    def set_picks(self, picks):
+        """设置相位检测结果
+        
+        参数:
+        - picks: 相位检测结果列表，每个元素是一个字典，包含time, phase, channel, probability等键
+        """
+        self.picks = picks
+        # 如果当前正在显示波形，则更新图表以显示相位标记
+        if self.stream:
+            self.update_plot()
