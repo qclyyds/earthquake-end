@@ -33,6 +33,11 @@ class ScrollingWaveformDisplay(QWidget):
         self.speed_factor = 1.0  # 播放速度
         self.picks = []  # 存储相位检测结果
         
+        # 多波形显示相关属性
+        self.vertical_offset = 0  # 垂直偏移量，用于控制显示的波形范围
+        self.max_display_channels = 8  # 同时显示的最大通道数
+        self.visible_channels = []  # 当前可见的通道列表
+        
         # 创建UI
         self.init_ui()
         
@@ -44,6 +49,10 @@ class ScrollingWaveformDisplay(QWidget):
         """初始化用户界面"""
         layout = QVBoxLayout()
         
+        #正常显示中文
+        plt.rcParams['font.sans-serif'] = ['SimSun']
+        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+        
         # 创建matplotlib图形
         self.figure = Figure(figsize=(14, 8))
         self.canvas = FigureCanvas(self.figure)
@@ -52,11 +61,31 @@ class ScrollingWaveformDisplay(QWidget):
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.canvas.setMinimumHeight(400)  # 设置最小高度确保图形可见
         
+        # 创建主显示区域布局（图形 + 右侧滑动条）
+        display_layout = QHBoxLayout()
+        
         # 创建一个滚动区域来容纳画布，以防图形太大
         scroll_area = QScrollArea()
         scroll_area.setWidget(self.canvas)
         scroll_area.setWidgetResizable(True)  # 允许画布调整大小
-        layout.addWidget(scroll_area, 1)  # 使用权重1使它占据大部分空间
+        display_layout.addWidget(scroll_area, 1)  # 使用权重1使它占据大部分空间
+        
+        # 在右侧添加垂直滑动条用于多波形浏览
+        self.vertical_scroll_slider = QSlider(Qt.Vertical)
+        self.vertical_scroll_slider.setMinimum(0)
+        self.vertical_scroll_slider.setMaximum(100)
+        self.vertical_scroll_slider.setValue(0)
+        self.vertical_scroll_slider.setFixedWidth(20)
+        self.vertical_scroll_slider.setTickPosition(QSlider.TicksLeft)
+        self.vertical_scroll_slider.setTickInterval(25)
+        self.vertical_scroll_slider.valueChanged.connect(self.vertical_scroll_changed)
+        self.vertical_scroll_slider.setToolTip("垂直滚动查看更多波形通道")
+        display_layout.addWidget(self.vertical_scroll_slider)
+        
+        # 将显示区域添加到主布局
+        display_widget = QWidget()
+        display_widget.setLayout(display_layout)
+        layout.addWidget(display_widget, 1)
         
         # 创建控制面板
         control_panel = QHBoxLayout()
@@ -108,16 +137,16 @@ class ScrollingWaveformDisplay(QWidget):
         control_layout.setLayout(control_panel)
         layout.addWidget(control_layout)
         
-        # 位置滑块
+        # 位置滑块 - 改为无极滑动（使用实际时间值）
         position_layout = QHBoxLayout()
         position_layout.addWidget(QLabel("位置:"))
         
         self.position_slider = QSlider(Qt.Horizontal)
         self.position_slider.setMinimum(0)
-        self.position_slider.setMaximum(100)  # 使用百分比
+        self.position_slider.setMaximum(1000)  # 使用更高精度的滑块，1000个刻度
         self.position_slider.setValue(0)
         self.position_slider.setTickPosition(QSlider.TicksBelow)
-        self.position_slider.setTickInterval(10)
+        self.position_slider.setTickInterval(100)
         self.position_slider.valueChanged.connect(self.slider_position_changed)
         position_layout.addWidget(self.position_slider, 1)
         
@@ -148,11 +177,31 @@ class ScrollingWaveformDisplay(QWidget):
         self.max_position = duration
         self.current_position = 0
         
-        # 更新位置滑块
+        # 更新位置滑块 - 使用实际时间范围
+        max_slider_pos = max(0, int((self.max_position - self.window_length) * 10))  # 每0.1秒一个刻度
         self.position_slider.setMinimum(0)
-        self.position_slider.setMaximum(100)  # 使用百分比
+        self.position_slider.setMaximum(max_slider_pos)
         self.position_slider.setValue(0)
         self.update_position_label()
+        
+        # 简化多通道逻辑：直接使用传入的流，不需要复杂的滚动逻辑
+        # 因为通道选择已在主UI中完成
+        total_channels = len(stream)
+        if total_channels > self.max_display_channels:
+            # 如果通道数仍然很多，启用垂直滚动
+            self.vertical_scroll_slider.setMaximum(total_channels - self.max_display_channels)
+            self.vertical_scroll_slider.setVisible(True)
+        else:
+            # 通道数合适，隐藏垂直滚动条
+            self.vertical_scroll_slider.setMaximum(0)
+            self.vertical_scroll_slider.setVisible(False)
+        
+        # 重置垂直偏移
+        self.vertical_offset = 0
+        self.vertical_scroll_slider.setValue(0)
+        
+        # 更新可见通道列表
+        self.update_visible_channels()
         
         # 初始化图形显示
         self.init_plot()
@@ -167,16 +216,20 @@ class ScrollingWaveformDisplay(QWidget):
         self.lines = {}
         self.axes = {}
         
-        # 为每个通道创建子图
-        num_traces = len(self.stream)
+        # 只显示当前可见的通道
+        visible_traces = self.visible_channels
+        num_visible = len(visible_traces)
         
-        # 设置更合适的图形大小，针对少量通道
-        height_per_trace = 3.0  # 减小每个通道的高度，使波形看起来更宽
-        self.figure.set_size_inches(28, num_traces * height_per_trace)  # 增加宽度，保持相对高度
+        if num_visible == 0:
+            return
+        
+        # 设置更合适的图形大小，针对可见通道数量
+        height_per_trace = max(2.0, 16.0 / num_visible)  # 动态调整高度，确保图形不会太小
+        self.figure.set_size_inches(28, num_visible * height_per_trace)
         
         # 计算全局Y轴范围，确保所有通道使用相同的缩放
         global_y_ranges = {}
-        for trace in self.stream:
+        for trace in visible_traces:
             # 计算整个波形的全局范围
             data = trace.data
             if len(data) > 0:
@@ -191,9 +244,9 @@ class ScrollingWaveformDisplay(QWidget):
                 global_y_ranges[trace.id] = (-1, 1)
         
         # 创建子图并调整纵横比使波形更加拉长
-        for i, trace in enumerate(self.stream):
+        for i, trace in enumerate(visible_traces):
             # 创建子图，但高度更小以使波形拉长
-            ax = self.figure.add_subplot(num_traces, 1, i+1)
+            ax = self.figure.add_subplot(num_visible, 1, i+1)
             ax.set_ylabel(trace.id, fontsize=10)
             
             # 调整子图的纵横比，使波形看起来更加拉长
@@ -201,7 +254,7 @@ class ScrollingWaveformDisplay(QWidget):
             # 减小高度，保持位置
             ax.set_position([box.x0, box.y0, box.width, box.height * 0.8])
             
-            if i == num_traces - 1:  # 最后一个子图添加x轴标签
+            if i == num_visible - 1:  # 最后一个子图添加x轴标签
                 ax.set_xlabel('时间 (s)', fontsize=10)
             else:
                 ax.set_xticklabels([])  # 非最后一个子图隐藏x轴刻度标签
@@ -224,9 +277,14 @@ class ScrollingWaveformDisplay(QWidget):
             self.axes[trace.id] = ax
         
         # 添加标题
-        if num_traces > 0:
-            start_time_str = self.stream[0].stats.starttime.strftime('%Y-%m-%d %H:%M:%S')
-            self.figure.suptitle(f"地震波形监测 - {start_time_str}", fontsize=14, y=0.99)
+        if num_visible > 0:
+            start_time_str = visible_traces[0].stats.starttime.strftime('%Y-%m-%d %H:%M:%S')
+            total_channels = len(self.stream)
+            if total_channels > self.max_display_channels:
+                title = f"地震波形监测 - {start_time_str} (显示第{self.vertical_offset+1}-{self.vertical_offset+num_visible}个通道，共{total_channels}个)"
+            else:
+                title = f"地震波形监测 - {start_time_str} (共{total_channels}个通道)"
+            self.figure.suptitle(title, fontsize=14, y=0.99)
         
         # 优化布局 - 增加水平方向的空间
         self.figure.tight_layout(pad=1.0, rect=[0.01, 0.03, 0.99, 0.95])
@@ -254,10 +312,10 @@ class ScrollingWaveformDisplay(QWidget):
         self.current_position = new_position
         self.update_plot()
         
-        # 更新滑块位置（不触发事件）
+        # 更新滑块位置（不触发事件）- 使用实际时间值
         self.position_slider.blockSignals(True)
-        position_percent = int(100 * self.current_position / max(1, self.max_position - self.window_length))
-        self.position_slider.setValue(position_percent)
+        slider_value = int(self.current_position * 10)  # 转换为滑块刻度值
+        self.position_slider.setValue(slider_value)
         self.position_slider.blockSignals(False)
         
         # 更新位置标签
@@ -265,15 +323,15 @@ class ScrollingWaveformDisplay(QWidget):
     
     def update_plot(self):
         """更新图表，显示当前窗口位置的数据"""
-        if not self.stream:
+        if not self.stream or not self.visible_channels:
             return
         
         # 计算当前窗口的时间范围
         window_start = self.current_position
         window_end = window_start + self.window_length
         
-        # 更新每个通道的数据
-        for i, trace in enumerate(self.stream):
+        # 更新每个可见通道的数据
+        for i, trace in enumerate(self.visible_channels):
             trace_id = trace.id
             if trace_id not in self.lines:
                 continue
@@ -335,11 +393,17 @@ class ScrollingWaveformDisplay(QWidget):
                                 color=color, va='top', fontsize=10, 
                                 bbox=dict(facecolor='white', alpha=0.7, pad=2))
         
-        # 更新标题显示当前时间
-        if len(self.stream) > 0:
-            current_time = self.stream[0].stats.starttime + self.current_position
-            title = f"地震波形监测 - {current_time.strftime('%Y-%m-%d %H:%M:%S')} (位置: {self.current_position:.1f}s)"
-            self.figure.suptitle(title, fontsize=14, y=0.99)
+        # 更新标题显示当前时间和通道信息
+        if len(self.visible_channels) > 0:
+            current_time = self.visible_channels[0].stats.starttime + self.current_position
+            total_channels = len(self.stream)
+            visible_count = len(self.visible_channels)
+            
+            if total_channels > self.max_display_channels:
+                title = f"地震波形监测 - {current_time.strftime('%Y-%m-%d %H:%M:%S')} (位置: {self.current_position:.1f}s) - 显示第{self.vertical_offset+1}-{self.vertical_offset+visible_count}个通道，共{total_channels}个"
+            else:
+                title = f"地震波形监测 - {current_time.strftime('%Y-%m-%d %H:%M:%S')} (位置: {self.current_position:.1f}s) - 共{total_channels}个通道"
+            self.figure.suptitle(title, fontsize=12, y=0.99)
         
         # 重绘画布
         self.canvas.draw_idle()
@@ -407,10 +471,13 @@ class ScrollingWaveformDisplay(QWidget):
             self.update_plot()  # 立即更新以应用自动缩放
     
     def slider_position_changed(self, value):
-        """处理位置滑块值变化"""
-        # 根据百分比计算实际位置
-        position_percent = value / 100.0
-        new_position = position_percent * max(0, self.max_position - self.window_length)
+        """处理位置滑块值变化 - 实现无极滑动"""
+        # 将滑块值转换为实际时间位置（每0.1秒一个刻度）
+        new_position = value / 10.0
+        
+        # 确保不超过有效范围
+        max_valid_position = max(0, self.max_position - self.window_length)
+        new_position = min(new_position, max_valid_position)
         
         # 设置新位置
         self.current_position = new_position
@@ -429,7 +496,7 @@ class ScrollingWaveformDisplay(QWidget):
         """重置到波形起始位置"""
         self.current_position = 0
         
-        # 更新滑块位置
+        # 更新滑块位置 - 使用实际时间值
         self.position_slider.blockSignals(True)
         self.position_slider.setValue(0)
         self.position_slider.blockSignals(False)
@@ -452,3 +519,32 @@ class ScrollingWaveformDisplay(QWidget):
         # 如果当前正在显示波形，则更新图表以显示相位标记
         if self.stream:
             self.update_plot()
+    
+    def update_visible_channels(self):
+        """更新当前可见的通道列表"""
+        if not self.stream:
+            self.visible_channels = []
+            return
+        
+        total_channels = len(self.stream)
+        start_idx = self.vertical_offset
+        end_idx = min(start_idx + self.max_display_channels, total_channels)
+        
+        self.visible_channels = self.stream[start_idx:end_idx]
+    
+    def vertical_scroll_changed(self, value):
+        """处理垂直滚动条值变化"""
+        self.vertical_offset = value
+        self.update_visible_channels()
+        
+        # 重新初始化图形显示
+        self.init_plot()
+        
+        # 更新当前的波形显示
+        self.update_plot()
+        
+        # 更新状态信息
+        total_channels = len(self.stream)
+        visible_count = len(self.visible_channels)
+        if total_channels > 0:
+            self.status_label.setText(f"显示第{self.vertical_offset+1}-{self.vertical_offset+visible_count}个通道，共{total_channels}个")

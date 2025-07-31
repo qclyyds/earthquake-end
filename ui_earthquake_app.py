@@ -1,4 +1,10 @@
 import sys
+import os
+import numpy as np
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+import traceback
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QFileDialog, QLabel, 
                              QComboBox, QToolBar, QAction, QMessageBox, QScrollArea,
@@ -7,17 +13,13 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QGroupBox, QFormLayout, QDialogButtonBox, QSpinBox,
                              QSizePolicy)
 from PyQt5.QtCore import Qt, QDateTime
-import matplotlib
+from PyQt5.QtGui import QPixmap, QIcon, QFont
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
 from obspy import read, read_inventory, UTCDateTime
-import pandas as pd
 from datetime import datetime
-from PyQt5.QtGui import QPixmap, QIcon, QFont
-import os
 
 # 导入我们的地震处理功能文件
 from seismic_processor import (WaveformLoadThread, PhaseDetectionThread, 
@@ -25,6 +27,9 @@ from seismic_processor import (WaveformLoadThread, PhaseDetectionThread,
 
 # 导入滚动波形显示组件
 from scrolling_waveform import ScrollingWaveformDisplay
+
+# 导入地震目录可视化模块
+from catalog_visualizer import CatalogVisualizer
 
 # 时间窗口选择对话框
 class TimeWindowDialog(QDialog):
@@ -175,7 +180,7 @@ class SeismicPhasePicker(QMainWindow):
         # 添加进度条
         self.status_label = QLabel("就绪")
         self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)  # 初始不可见
+        self.progress_bar.setVisible(True)  # 初始可见
         
         # 创建中央小部件和布局
         central_widget = QWidget()
@@ -329,7 +334,7 @@ class SeismicPhasePicker(QMainWindow):
         # 添加 logo (在滚动区域之外)
         self.logo_label = QLabel()
         try:
-            logo_pixmap = QPixmap(r"D:\demo\newearthquake\LOGO.jpg") 
+            logo_pixmap = QPixmap(r"LOGO.jpg") 
             logo_pixmap = logo_pixmap.scaledToWidth(800, Qt.SmoothTransformation)
             self.logo_label.setPixmap(logo_pixmap)
         except:
@@ -899,225 +904,13 @@ class SeismicPhasePicker(QMainWindow):
         self.canvas.draw()
 
     def visualize_catalog(self):
-        """可视化关联的地震目录
-        
-        本函数创建一个对话框，用于显示地震事件的可视化。
-        主要包含两部分：震源分布图和事件列表表格。
-        
-        【布局修改指南】：
-        - 要改为垂直布局: 将 QHBoxLayout 改为 QVBoxLayout
-        - 要改为网格布局: 将 QHBoxLayout 改为 QGridLayout，然后使用 layout.addWidget(widget, row, col)
-        - 调整部件比例: 修改 main_layout.addWidget() 的比例参数
-        """
-        # 检查是否有关联事件
-        if self.events_df is None or self.events_df.empty:
-            QMessageBox.warning(self, "警告", "没有关联事件可显示")
-            return
-        
-        # 创建可视化窗口
-        vis_dialog = QDialog(self)
-        vis_dialog.setWindowTitle("地震事件可视化")
-        vis_dialog.setGeometry(100, 100, 2000, 1200)  # 窗口位置和大小(x, y, 宽, 高)
-        
-        # 创建主水平布局 - 【如需改为垂直布局，将QHBoxLayout改为QVBoxLayout】
-        main_layout = QHBoxLayout(vis_dialog)
-        
-        #===================================================================
-        # 【震源分布图部分】
-        #===================================================================
-        left_widget = QWidget()  # 创建一个容器部件
-        left_layout = QVBoxLayout(left_widget)  # 左侧使用垂直布局
-        
-        # 创建标题标签
-        title_label = QLabel("震源分布图")
-        title_label.setFont(QFont("SimSun", 12, QFont.Bold))  # 字体设置：字体名，大小，粗体
-        title_label.setAlignment(Qt.AlignCenter)  # 文本居中对齐
-        left_layout.addWidget(title_label)
-        
-        # 创建Matplotlib图形容器
-        map_widget = QWidget()  # Matplotlib需要一个容器来承载
-        map_layout = QVBoxLayout(map_widget)
-        map_layout.setContentsMargins(0, 0, 0, 0)  # 移除内边距
-        
-        # 创建自适应窗口大小的Matplotlib图形
-        figure = Figure()  # 不指定大小，将根据容器自动调整
-        canvas = FigureCanvas(figure)  # 创建画布
-        # 设置画布的大小策略为Expanding，使其填充可用空间
-        canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        map_layout.addWidget(canvas)
-        
-        # 绘制震源分布图 - 调用实际绘图函数
-        self.plot_3d_from_dataframe(figure)
-        
-        # 添加到左侧布局，移除弹性空间以使图形填满区域
-        left_layout.addWidget(map_widget)
-        
-        # 将左侧部分添加到主布局，使其填充剩余空间
-        main_layout.addWidget(left_widget, 1)  # 设置为1，将占用除右侧固定宽度外的所有空间 
-        
-        #===================================================================
-        # 【事件列表部分】
-        #===================================================================
-        right_widget = QWidget()  # 创建右侧容器部件
-        right_layout = QVBoxLayout(right_widget)  # 右侧使用垂直布局
-        
-        # 添加事件列表标题
-        events_title = QLabel("事件列表")
-        events_title.setFont(QFont("SimSun", 12, QFont.Bold))  # 使用中文字体
-        events_title.setAlignment(Qt.AlignCenter)
-        right_layout.addWidget(events_title)
-        
-        # 创建表格
-        self.events_table = QTableWidget()
-        
-        # 设置表格最小高度
-        self.events_table.setMinimumHeight(600)
-        # 设置表格固定宽度，确保能完全显示表头
-        self.events_table.setFixedWidth(650)  # 设置固定宽度
-        
-        # 填充表格数据 - 调用填充表格的函数
-        self.populate_events_table()
-        
-        # 添加表格到右侧布局
-        right_layout.addWidget(self.events_table)
-        
-        # 将右侧部分添加到主布局，使用固定宽度
-        right_widget.setFixedWidth(700)  # 设置固定宽度，比表格稍宽以留出边距
-        main_layout.addWidget(right_widget)
-        
-        # 显示对话框 - 这是一个模态对话框，会阻塞直到关闭
-        vis_dialog.exec_()
-
-    def plot_3d_from_dataframe(self, figure):
-        """从DataFrame绘制震源位置分布图（2D平面图）
-        
-        参数:
-            figure: matplotlib的Figure对象，用于绘制图形
-            
-        【修改指南】:
-            - 修改图形类型: 更改add_subplot的参数(如3D图：add_subplot(111, projection='3d'))
-            - 更改颜色设置: 修改scatter中的cmap参数(如"jet", "viridis", "plasma"等)
-            - 修改点大小: 更改scatter中的s参数
-            - 添加图例: 使用ax.legend()
-            - 调整坐标轴: 使用ax.set_xlim(), ax.set_ylim()
-        """
-        # 清除图形
-        figure.clear()
-        
-        # 设置中文字体支持 - 允许在图像中显示中文
-        try:
-            # 尝试设置中文字体
-            from matplotlib import font_manager
-            import matplotlib.pyplot as plt
-            
-            # 检查是否有中文字体
-            chinese_fonts = [f for f in font_manager.fontManager.ttflist 
-                           if 'SimHei' in f.name or 'Microsoft YaHei' in f.name 
-                           or 'SimSun' in f.name or 'FangSong' in f.name]
-            
-            if chinese_fonts:
-                # 找到系统中的中文字体并使用
-                plt.rcParams['font.sans-serif'] = [chinese_fonts[0].name]
-                print(f"使用中文字体: {chinese_fonts[0].name}")
-            else:
-                # 尝试使用通用字体
-                plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'SimSun', 'Arial Unicode MS', 'DejaVu Sans']
-            
-            # 解决负号'-'显示为方块的问题
-            plt.rcParams['axes.unicode_minus'] = False
-        except Exception as e:
-            print(f"设置中文字体失败: {str(e)}")
-        
-        # 创建2D子图 - 111表示1行1列的第1个图
-        ax = figure.add_subplot(111)
-        ax.set_aspect("equal")  # 保持X和Y轴的比例相同
-        
-        # 获取事件和台站信息
-        events = self.events_df
-        stations = self.stations_df
-        
-        #===================================================================
-        # 【坐标数据准备部分】- 确保有可绘制的x和y坐标数据
-        #===================================================================
-        # 检查必要的列是否存在
-        if 'x' not in events.columns or 'y' not in events.columns:
-            # 尝试使用关联器从经纬度转换为局部坐标
-            if self.associator is not None and 'latitude' in events.columns and 'longitude' in events.columns:
-                try:
-                    # 转换经纬度坐标为局部平面坐标(单位:km)
-                    local_coords = self.associator.transform_origin(events)
-                    # 添加到原始DataFrame
-                    events = pd.concat([events, local_coords[['x', 'y']]], axis=1)
-                    print("已将经纬度转换为局部坐标用于绘图")
-                except Exception as e:
-                    print(f"坐标转换失败: {e}")
-                    # 如果转换失败，使用经纬度作为坐标
-                    events['x'] = events['longitude']
-                    events['y'] = events['latitude']
-                    print("使用经纬度作为坐标")
-            else:
-                # 直接使用经纬度
-                events['x'] = events['longitude']
-                events['y'] = events['latitude']
-                print("无法转换坐标，使用经纬度代替")
-        
-        #===================================================================
-        # 【震源点绘制部分】- 主要散点图绘制
-        #===================================================================
-        # 绘制事件点，使用颜色表示深度
-        # 【修改点】可以调整这里的参数来更改散点图外观:
-        # - s: 点大小
-        # - cmap: 颜色映射("viridis", "jet", "plasma", "inferno"等)
-        # - alpha: 透明度(0-1)
-        scatter = ax.scatter(
-            events["x"], events["y"],  # X和Y坐标
-            c=events["depth"],         # 颜色映射值(深度)
-            s=80,                      # 点大小
-            cmap="viridis",            # 颜色映射
-            alpha=0.8                  # 透明度
+        """可视化关联的地震目录 - 调用外部模块"""
+        CatalogVisualizer.show_catalog_visualization(
+            parent=self,
+            events_df=self.events_df,
+            stations_df=self.stations_df,
+            associator=self.associator
         )
-        
-        # 添加颜色条并反转颜色条
-        cbar = figure.colorbar(scatter, ax=ax)
-        cbar.ax.set_ylim(cbar.ax.get_ylim()[::-1])  # 反转颜色条(深度由浅至深)
-        cbar.set_label("深度 [km]")                  # 颜色条标签
-        
-        #===================================================================
-        # 【台站位置绘制】- 如果有台站数据
-        #===================================================================
-        # 绘制台站位置(红色三角形)
-        if stations is not None and 'x' in stations.columns and 'y' in stations.columns:
-            # 【修改点】可以调整三角形样式:
-            # - "r^": 红色三角形
-            # - ms: 标记大小
-            # - mew: 标记边缘宽度
-            # - mec: 标记边缘颜色
-            ax.plot(stations["x"], stations["y"], "r^", ms=10, mew=1, mec="k")
-        
-        #===================================================================
-        # 【坐标轴和标签设置】
-        #===================================================================
-        # 根据使用的坐标类型设置轴标签
-        if 'longitude' in events.columns and events['x'].equals(events['longitude']):
-            ax.set_xlabel("经度 [°]")
-            ax.set_ylabel("纬度 [°]")
-        else:
-            ax.set_xlabel("东向距离 [km]")
-            ax.set_ylabel("北向距离 [km]")
-        
-        # 设置图表标题
-        ax.set_title("地震事件分布图")
-        
-        # 添加网格线
-        ax.grid(True, alpha=0.3)
-        
-        #===================================================================
-        # 【图形最终处理】
-        #===================================================================
-        # 调整布局以确保所有元素可见
-        figure.tight_layout()
-        # 刷新画布
-        figure.canvas.draw()
 
     def export_catalog(self):
         """导出关联事件目录"""
@@ -1150,46 +943,6 @@ class SeismicPhasePicker(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "错误", f"导出事件目录时出错: {str(e)}")
-
-    def populate_events_table(self):
-        """填充事件表格数据"""
-        # 设置表格列
-        headers = ['ID', '经度', '纬度', '深度 (km)', '发生时间', '相位数', 'RMS', 'GAP']
-        self.events_table.setColumnCount(len(headers))
-        self.events_table.setHorizontalHeaderLabels(headers)
-        
-        # 从数据框填充
-        if self.events_df is not None and not self.events_df.empty:
-            self.events_table.setRowCount(len(self.events_df))
-            
-            for i, (idx, event) in enumerate(self.events_df.iterrows()):
-                # ID
-                self.events_table.setItem(i, 0, QTableWidgetItem(str(i+1)))
-                # 经度
-                self.events_table.setItem(i, 1, QTableWidgetItem(f"{event['longitude']:.4f}"))
-                # 纬度
-                self.events_table.setItem(i, 2, QTableWidgetItem(f"{event['latitude']:.4f}"))
-                # 深度
-                self.events_table.setItem(i, 3, QTableWidgetItem(f"{event['depth']:.2f}"))
-                # 时间
-                time_str = datetime.fromtimestamp(event['time']).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                self.events_table.setItem(i, 4, QTableWidgetItem(time_str))
-                # 相位数
-                self.events_table.setItem(i, 5, QTableWidgetItem(str(event['picks'])))
-                # RMS（如果有）
-                rms = event.get('rms', 0)
-                self.events_table.setItem(i, 6, QTableWidgetItem(f"{rms:.2f}"))
-                # GAP（如果有）
-                gap = event.get('gap', 0)
-                self.events_table.setItem(i, 7, QTableWidgetItem(str(gap)))
-        
-        # 设置各列的固定宽度，确保表头文字完全显示
-        header = self.events_table.horizontalHeader()
-        column_widths = [40, 80, 80, 80, 150, 60, 60, 60]  # 各列宽度
-        
-        for i, width in enumerate(column_widths):
-            self.events_table.setColumnWidth(i, width)
-            header.setSectionResizeMode(i, QHeaderView.Fixed)  # 设置列宽为固定值
 
     def toggle_streaming_mode(self):
         """切换到实时模拟模式 - 在已加载波形上显示滑动窗口"""
