@@ -11,6 +11,7 @@
 """
 
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -178,11 +179,21 @@ class CatalogVisualizerDialog(QDialog):
         stations = self.stations_df
         
         #===================================================================
-        # 【坐标数据准备部分】- 确保有可绘制的x和y坐标数据
+        # 【坐标数据准备部分】- 优先使用实际经纬度坐标
         #===================================================================
-        # 检查必要的列是否存在
-        if 'x' not in events.columns or 'y' not in events.columns:
-            # 尝试使用关联器从经纬度转换为局部坐标
+        # 优先使用经纬度坐标进行绘图
+        if 'latitude' in events.columns and 'longitude' in events.columns:
+            # 直接使用经纬度作为绘图坐标
+            events['x'] = events['longitude']
+            events['y'] = events['latitude']
+            print("使用实际经纬度坐标进行绘图")
+            use_geographic_coords = True
+        elif 'x' in events.columns and 'y' in events.columns:
+            # 如果没有经纬度，但有相对坐标，则使用相对坐标
+            print("使用相对坐标进行绘图")
+            use_geographic_coords = False
+        else:
+            # 尝试使用关联器从经纬度转换为局部坐标（作为备选方案）
             if self.associator is not None and 'latitude' in events.columns and 'longitude' in events.columns:
                 try:
                     # 转换经纬度坐标为局部平面坐标(单位:km)
@@ -190,17 +201,21 @@ class CatalogVisualizerDialog(QDialog):
                     # 添加到事件数据框
                     events = pd.concat([events, local_coords[['x', 'y']]], axis=1)
                     print("已将经纬度转换为局部坐标用于绘图")
+                    use_geographic_coords = False
                 except Exception as e:
                     print(f"坐标转换失败: {e}")
-                    # 如果转换失败，使用经纬度作为坐标
-                    events['x'] = events['longitude']
-                    events['y'] = events['latitude']
-                    print("使用经纬度作为坐标")
+                    # 如果转换失败，尝试使用经纬度作为坐标
+                    if 'latitude' in events.columns and 'longitude' in events.columns:
+                        events['x'] = events['longitude']
+                        events['y'] = events['latitude']
+                        print("转换失败，使用经纬度作为坐标")
+                        use_geographic_coords = True
+                    else:
+                        print("无可用坐标数据")
+                        return
             else:
-                # 直接使用经纬度
-                events['x'] = events['longitude']
-                events['y'] = events['latitude']
-                print("无法转换坐标，使用经纬度代替")
+                print("无可用坐标数据")
+                return
         
         #===================================================================
         # 【震源点绘制部分】- 主要散点图绘制
@@ -224,37 +239,119 @@ class CatalogVisualizerDialog(QDialog):
         cbar.set_label("深度 [km]")                  # 颜色条标签
         
         #===================================================================
-        # 【台站位置绘制】- 如果有台站数据
+        # 【台站位置绘制】- 如果有台站数据，优先使用经纬度
         #===================================================================
         # 绘制台站位置(红色三角形)
-        if stations is not None and 'x' in stations.columns and 'y' in stations.columns:
-            # 【修改点】可以调整三角形样式:
-            # - "r^": 红色三角形
-            # - ms: 标记大小
-            # - mew: 标记边缘宽度
-            # - mec: 标记边缘颜色
-            ax.plot(stations["x"], stations["y"], "r^", ms=10, mew=1, mec="k", label="台站")
+        if stations is not None and not stations.empty:
+            print(f"开始绘制台站，台站数据形状: {stations.shape}")
+            print(f"台站数据列: {stations.columns.tolist()}")
+            
+            # 处理台站坐标，优先使用经纬度
+            stations_to_plot = stations.copy()
+            station_plotted = False
+            
+            if use_geographic_coords:
+                # 如果事件使用经纬度坐标，台站也优先使用经纬度
+                if 'latitude' in stations_to_plot.columns and 'longitude' in stations_to_plot.columns:
+                    stations_to_plot['x'] = stations_to_plot['longitude']
+                    stations_to_plot['y'] = stations_to_plot['latitude']
+                    print(f"台站使用经纬度坐标，台站数量: {len(stations_to_plot)}")
+                    station_plotted = True
+                elif 'x' in stations_to_plot.columns and 'y' in stations_to_plot.columns:
+                    # 如果台站只有相对坐标，直接使用
+                    print("台站使用现有的相对坐标")
+                    station_plotted = True
+                else:
+                    print("台站数据中缺少坐标信息")
+            else:
+                # 如果事件使用相对坐标，台站也需要相对坐标
+                if 'x' in stations_to_plot.columns and 'y' in stations_to_plot.columns:
+                    print("台站使用现有的相对坐标")
+                    station_plotted = True
+                elif 'latitude' in stations_to_plot.columns and 'longitude' in stations_to_plot.columns:
+                    if self.associator is not None:
+                        try:
+                            # 转换台站经纬度为相对坐标
+                            local_coords = self.associator.transform_origin(stations_to_plot)
+                            stations_to_plot = pd.concat([stations_to_plot, local_coords[['x', 'y']]], axis=1)
+                            print("成功转换台站经纬度为相对坐标")
+                            station_plotted = True
+                        except Exception as e:
+                            print(f"转换台站坐标失败: {e}")
+                            # 转换失败，直接使用经纬度作为坐标
+                            stations_to_plot['x'] = stations_to_plot['longitude']
+                            stations_to_plot['y'] = stations_to_plot['latitude']
+                            print("转换失败，直接使用经纬度作为坐标")
+                            station_plotted = True
+                    else:
+                        # 没有关联器，直接使用经纬度作为坐标
+                        stations_to_plot['x'] = stations_to_plot['longitude']
+                        stations_to_plot['y'] = stations_to_plot['latitude']
+                        print("没有关联器，直接使用经纬度作为坐标")
+                        station_plotted = True
+                else:
+                    print("台站数据中缺少坐标信息")
+            
+            # 绘制台站
+            if station_plotted and 'x' in stations_to_plot.columns and 'y' in stations_to_plot.columns:
+                # 确保坐标数据是有效的
+                valid_stations = stations_to_plot.dropna(subset=['x', 'y'])
+                if not valid_stations.empty:
+                    print(f"绘制 {len(valid_stations)} 个台站")
+                    print(f"台站坐标范围: x=[{valid_stations['x'].min():.3f}, {valid_stations['x'].max():.3f}], y=[{valid_stations['y'].min():.3f}, {valid_stations['y'].max():.3f}]")
+                    
+                    # 【修改点】可以调整三角形样式:
+                    # - "r^": 红色三角形
+                    # - ms: 标记大小
+                    # - mew: 标记边缘宽度
+                    # - mec: 标记边缘颜色
+                    ax.plot(valid_stations["x"], valid_stations["y"], "r^", ms=12, mew=1.5, mec="darkred", label="台站")
+                    station_plotted = True
+                else:
+                    print("台站坐标数据无效（包含NaN值）")
+                    station_plotted = False
+            else:
+                print("台站绘制条件不满足")
+                station_plotted = False
         
         #===================================================================
         # 【坐标轴和标签设置】
         #===================================================================
         # 根据使用的坐标类型设置轴标签
-        if 'longitude' in events.columns and events['x'].equals(events['longitude']):
+        if use_geographic_coords:
             ax.set_xlabel("经度 [°]")
             ax.set_ylabel("纬度 [°]")
+            # 设置更精确的刻度格式
+            ax.ticklabel_format(style='plain', useOffset=False)
+            
+            # 为经纬度坐标优化显示范围和刻度
+            self.optimize_geographic_display(ax, events, stations)
         else:
             ax.set_xlabel("东向距离 [km]")
             ax.set_ylabel("北向距离 [km]")
         
         # 设置图表标题
-        ax.set_title("地震事件分布图")
+        title = "地震事件分布图"
+        if use_geographic_coords:
+            title += "（经纬度坐标）"
+        else:
+            title += "（相对坐标）"
+        ax.set_title(title)
         
         # 添加网格线
         ax.grid(True, alpha=0.3)
         
         # 如果绘制了台站，添加图例
-        if stations is not None and 'x' in stations.columns and 'y' in stations.columns:
-            ax.legend()
+        if stations is not None and not stations.empty:
+            # 检查是否成功绘制了台站
+            try:
+                if ('x' in stations.columns and 'y' in stations.columns) or \
+                   ('latitude' in stations.columns and 'longitude' in stations.columns):
+                    ax.legend()
+                    print("添加了图例")
+            except Exception as e:
+                print(f"添加图例失败: {e}")
+                pass
         
         #===================================================================
         # 【图形最终处理】
@@ -263,6 +360,134 @@ class CatalogVisualizerDialog(QDialog):
         self.figure.tight_layout()
         # 刷新画布
         self.figure.canvas.draw()
+    
+    def optimize_geographic_display(self, ax, events, stations=None):
+        """优化经纬度坐标的显示效果
+        
+        参数:
+            ax: matplotlib坐标轴对象
+            events: 事件数据框
+            stations: 台站数据框（可选）
+        """
+        if 'longitude' in events.columns and 'latitude' in events.columns:
+            # 计算事件经纬度范围
+            lon_min, lon_max = events['longitude'].min(), events['longitude'].max()
+            lat_min, lat_max = events['latitude'].min(), events['latitude'].max()
+            
+            # 如果有台站数据，也考虑台站的坐标范围
+            if stations is not None and not stations.empty:
+                if 'longitude' in stations.columns and 'latitude' in stations.columns:
+                    station_lon_min, station_lon_max = stations['longitude'].min(), stations['longitude'].max()
+                    station_lat_min, station_lat_max = stations['latitude'].min(), stations['latitude'].max()
+                    
+                    # 扩展坐标范围以包含台站
+                    lon_min = min(lon_min, station_lon_min)
+                    lon_max = max(lon_max, station_lon_max)
+                    lat_min = min(lat_min, station_lat_min)
+                    lat_max = max(lat_max, station_lat_max)
+                    
+                    print(f"坐标范围（包含台站）: 经度[{lon_min:.3f}, {lon_max:.3f}], 纬度[{lat_min:.3f}, {lat_max:.3f}]")
+            
+            # 添加适当的边距
+            lon_margin = (lon_max - lon_min) * 0.1 if lon_max > lon_min else 0.01
+            lat_margin = (lat_max - lat_min) * 0.1 if lat_max > lat_min else 0.01
+            
+            # 设置坐标轴范围
+            ax.set_xlim(lon_min - lon_margin, lon_max + lon_margin)
+            ax.set_ylim(lat_min - lat_margin, lat_max + lat_margin)
+            
+            # 设置合适的刻度间隔
+            lon_range = lon_max - lon_min
+            lat_range = lat_max - lat_min
+            
+            # 智能刻度间隔计算，确保刻度均匀且不拥挤
+            # 目标：保持4-6个主要刻度，确保画幅充分利用
+            
+            def calculate_optimal_interval(data_range):
+                """计算最优刻度间隔，确保4-6个刻度"""
+                target_ticks = 5  # 目标刻度数量
+                base_interval = data_range / target_ticks
+                
+                # 将间隔调整为"好看"的数值（1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01等）
+                nice_intervals = [5.0, 2.0, 1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001]
+                for interval in nice_intervals:
+                    if base_interval >= interval * 0.6:  # 收紧条件，更倾向于较大间隔
+                        return interval
+                return nice_intervals[-1]  # 最小间隔
+            
+            lon_tick_interval = calculate_optimal_interval(lon_range)
+            lat_tick_interval = calculate_optimal_interval(lat_range)
+            
+            print(f"刻度间隔优化: 经度={lon_tick_interval}°, 纬度={lat_tick_interval}°")
+            
+            # 生成均匀分布的刻度
+            import numpy as np
+            
+            # 计算刻度的起始和结束位置，确保刻度覆盖整个显示范围
+            lon_start = np.floor((lon_min - lon_margin) / lon_tick_interval) * lon_tick_interval
+            lon_end = np.ceil((lon_max + lon_margin) / lon_tick_interval) * lon_tick_interval
+            lat_start = np.floor((lat_min - lat_margin) / lat_tick_interval) * lat_tick_interval
+            lat_end = np.ceil((lat_max + lat_margin) / lat_tick_interval) * lat_tick_interval
+            
+            # 生成刻度数组
+            lon_ticks = np.arange(lon_start, lon_end + lon_tick_interval/2, lon_tick_interval)
+            lat_ticks = np.arange(lat_start, lat_end + lat_tick_interval/2, lat_tick_interval)
+            
+            # 确保刻度数量合理（4-6个），避免过于拥挤或稀疏
+            max_ticks = 6  # 最大刻度数
+            min_ticks = 4  # 最小刻度数
+            
+            # 如果刻度太多，适当减少
+            if len(lon_ticks) > max_ticks:
+                step = len(lon_ticks) // max_ticks + 1
+                lon_ticks = lon_ticks[::step]
+            if len(lat_ticks) > max_ticks:
+                step = len(lat_ticks) // max_ticks + 1
+                lat_ticks = lat_ticks[::step]
+            
+            # 如果刻度太少，适当增加
+            if len(lon_ticks) < min_ticks and lon_range > 0:
+                # 重新计算更密集的刻度
+                lon_tick_interval = lon_tick_interval / 2
+                lon_start = np.floor((lon_min - lon_margin) / lon_tick_interval) * lon_tick_interval
+                lon_end = np.ceil((lon_max + lon_margin) / lon_tick_interval) * lon_tick_interval
+                lon_ticks = np.arange(lon_start, lon_end + lon_tick_interval/2, lon_tick_interval)
+                
+            if len(lat_ticks) < min_ticks and lat_range > 0:
+                lat_tick_interval = lat_tick_interval / 2
+                lat_start = np.floor((lat_min - lat_margin) / lat_tick_interval) * lat_tick_interval
+                lat_end = np.ceil((lat_max + lat_margin) / lat_tick_interval) * lat_tick_interval
+                lat_ticks = np.arange(lat_start, lat_end + lat_tick_interval/2, lat_tick_interval)
+            
+            print(f"最终刻度数量: 经度={len(lon_ticks)}个, 纬度={len(lat_ticks)}个")
+            
+            ax.set_xticks(lon_ticks)
+            ax.set_yticks(lat_ticks)
+            
+            # 设置刻度标签格式，确保不重叠
+            if lon_tick_interval >= 1:
+                ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0f}°'))
+            elif lon_tick_interval >= 0.1:
+                ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.1f}°'))
+            else:
+                ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.2f}°'))
+                
+            if lat_tick_interval >= 1:
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0f}°'))
+            elif lat_tick_interval >= 0.1:
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.1f}°'))
+            else:
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.2f}°'))
+            
+            # 优化刻度标签显示，避免重叠
+            ax.tick_params(axis='x', rotation=0, labelsize=9)  # x轴标签不旋转，使用较小字体
+            ax.tick_params(axis='y', rotation=0, labelsize=9)  # y轴标签不旋转，使用较小字体
+            
+            # 如果刻度仍然拥挤，自动旋转x轴标签
+            if len(lon_ticks) > 5:
+                ax.tick_params(axis='x', rotation=45)  # 斜45度显示
+            
+            print(f"刻度标签优化完成")
 
     def populate_events_table(self):
         """填充事件表格数据"""

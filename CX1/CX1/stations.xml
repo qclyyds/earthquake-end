@@ -1,0 +1,202 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<FDSNStationXML xmlns="http://www.fdsn.org/xml/station/1" schemaVersion="1.2">
+  <Source>SeisComP</Source>
+  <Sender>GFZ</Sender>
+  <Module/>
+  <ModuleURI/>
+  <Created>2025-06-28T05:23:26.144513Z</Created>
+  <Network code="CX" startDate="1980-01-01T00:00:00.000000Z" restrictedStatus="open">
+    <Description>IPOC Seismic Network (Integrated Plate boundary Observatory Chile)</Description>
+    <Identifier type="DOI">10.14470/PK615318</Identifier>
+    <Station code="PB01" startDate="2006-02-21T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-21.04323</Latitude>
+      <Longitude unit="DEGREES">-69.4874</Longitude>
+      <Elevation>900.0</Elevation>
+      <Site>
+        <Name>IPOC Station Huatacondo, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-02-21T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB02" startDate="2006-05-06T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-21.31973</Latitude>
+      <Longitude unit="DEGREES">-69.89603</Longitude>
+      <Elevation>1015.0</Elevation>
+      <Site>
+        <Name>IPOC Station Salar Grande, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-05-06T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB03" startDate="2006-05-19T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-22.04847</Latitude>
+      <Longitude unit="DEGREES">-69.7531</Longitude>
+      <Elevation>1460.0</Elevation>
+      <Site>
+        <Name>IPOC Station El Tigre, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-05-19T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB04" startDate="2006-05-17T00:00:00.000000Z" endDate="2019-01-25T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-22.33369</Latitude>
+      <Longitude unit="DEGREES">-70.14918</Longitude>
+      <Elevation>1520.0</Elevation>
+      <Site>
+        <Name>IPOC Station Mantos de la Luna, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-05-17T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB05" startDate="2006-05-19T00:00:00.000000Z" endDate="2022-03-25T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-22.85283</Latitude>
+      <Longitude unit="DEGREES">-70.20235</Longitude>
+      <Elevation>1150.0</Elevation>
+      <Site>
+        <Name>IPOC Station Michilla, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-05-19T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB06" startDate="2007-03-04T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-22.7058</Latitude>
+      <Longitude unit="DEGREES">-69.57188</Longitude>
+      <Elevation>1440.0</Elevation>
+      <Site>
+        <Name>IPOC Station Pedro de Valdivia, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2007-03-04T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB07" startDate="2007-02-27T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-21.72667</Latitude>
+      <Longitude unit="DEGREES">-69.88618</Longitude>
+      <Elevation>1570.0</Elevation>
+      <Site>
+        <Name>IPOC Station Cerro Tatas, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2007-02-27T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB08" startDate="2007-03-01T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-20.14112</Latitude>
+      <Longitude unit="DEGREES">-69.1534</Longitude>
+      <Elevation>3060.0</Elevation>
+      <Site>
+        <Name>IPOC Station Macaya, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2007-03-01T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB09" startDate="2008-02-06T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-21.79638</Latitude>
+      <Longitude unit="DEGREES">-69.24192</Longitude>
+      <Elevation>1530.0</Elevation>
+      <Site>
+        <Name>IPOC Station Quillagua, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2008-02-06T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB10" startDate="2008-02-03T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-23.51343</Latitude>
+      <Longitude unit="DEGREES">-70.55408</Longitude>
+      <Elevation>250.0</Elevation>
+      <Site>
+        <Name>IPOC Station Juan Lopez, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2008-02-03T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB11" startDate="2008-12-23T00:00:00.000000Z" endDate="2022-01-03T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-19.76096</Latitude>
+      <Longitude unit="DEGREES">-69.65582</Longitude>
+      <Elevation>1400.0</Elevation>
+      <Site>
+        <Name>IPOC Station Quebrada Aricilda, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2008-12-23T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB12" startDate="2011-03-30T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-18.61406</Latitude>
+      <Longitude unit="DEGREES">-70.32809</Longitude>
+      <Elevation>908.0</Elevation>
+      <Site>
+        <Name>IPOC Station Cerro Caramaca near Arica, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2011-03-30T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB14" startDate="2010-03-27T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-24.62597</Latitude>
+      <Longitude unit="DEGREES">-70.40379</Longitude>
+      <Elevation>2630.0</Elevation>
+      <Site>
+        <Name>IPOC Station European Southern Observatory Cerro Paranal, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2010-03-27T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB15" startDate="2010-03-27T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-23.208335</Latitude>
+      <Longitude unit="DEGREES">-69.47092</Longitude>
+      <Elevation>1830.0</Elevation>
+      <Site>
+        <Name>IPOC Station Sierra Gorda, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2010-03-27T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PB16" startDate="2008-12-23T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-18.3351</Latitude>
+      <Longitude unit="DEGREES">-69.50767</Longitude>
+      <Elevation>4480.0</Elevation>
+      <Site>
+        <Name>IPOC Station Cerro Chaquipina new, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2008-12-23T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="HMBCX" startDate="2006-11-21T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-20.27822</Latitude>
+      <Longitude unit="DEGREES">-69.88791</Longitude>
+      <Elevation>1152.0</Elevation>
+      <Site>
+        <Name>IPOC Station Humberstone, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-11-21T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="MNMCX" startDate="2006-11-27T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-19.13108</Latitude>
+      <Longitude unit="DEGREES">-69.59553</Longitude>
+      <Elevation>2304.0</Elevation>
+      <Site>
+        <Name>IPOC Station Minimi, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-11-27T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PATCX" startDate="2006-12-01T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-20.82071</Latitude>
+      <Longitude unit="DEGREES">-70.15288</Longitude>
+      <Elevation>832.0</Elevation>
+      <Site>
+        <Name>IPOC Station Patache, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-12-01T00:00:00.000000Z</CreationDate>
+    </Station>
+    <Station code="PSGCX" startDate="2006-11-28T00:00:00.000000Z" restrictedStatus="open">
+      <Latitude unit="DEGREES">-19.59717</Latitude>
+      <Longitude unit="DEGREES">-70.12305</Longitude>
+      <Elevation>966.0</Elevation>
+      <Site>
+        <Name>IPOC Station Pisagua, Chile</Name>
+        <Country>Chile</Country>
+      </Site>
+      <CreationDate>2006-11-28T00:00:00.000000Z</CreationDate>
+    </Station>
+  </Network>
+</FDSNStationXML>
