@@ -31,6 +31,9 @@ from scrolling_waveform import ScrollingWaveformDisplay
 # 导入地震目录可视化模块
 from catalog_visualizer import CatalogVisualizer
 
+# 导入地图可视化模块
+from map_visualizer import MapVisualizer
+
 # 时间窗口选择对话框
 class TimeWindowDialog(QDialog):
     def __init__(self, parent=None, start_time=None, end_time=None):
@@ -243,6 +246,11 @@ class SeismicPhasePicker(QMainWindow):
         visualize_btn = QPushButton("可视化目录")
         visualize_btn.clicked.connect(self.visualize_catalog)
         toolbar.addWidget(visualize_btn)
+        
+        # 添加地图定位按钮
+        map_btn = QPushButton("地图定位")
+        map_btn.clicked.connect(self.show_map_visualization)
+        toolbar.addWidget(map_btn)
         
         # 添加实时模拟按钮
         stream_btn = QPushButton("实时模拟")
@@ -910,6 +918,18 @@ class SeismicPhasePicker(QMainWindow):
             events_df=self.events_df,
             stations_df=self.stations_df,
             associator=self.associator
+        )
+        
+    def show_map_visualization(self):
+        """在地图上显示地震事件位置 - 调用地图可视化模块"""
+        if self.events_df is None or self.events_df.empty:
+            QMessageBox.warning(self, "警告", "没有关联事件可显示")
+            return
+            
+        MapVisualizer.show_map_visualization(
+            parent=self,
+            events_df=self.events_df,
+            stations_df=self.stations_df
         )
 
     def export_catalog(self):
