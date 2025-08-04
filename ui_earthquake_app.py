@@ -32,7 +32,7 @@ from scrolling_waveform import ScrollingWaveformDisplay
 from catalog_visualizer import CatalogVisualizer
 
 # 导入地图可视化模块
-from map_visualizer import MapVisualizer
+from map_visualizer import MapVisualizer, EmbeddedMapWidget
 
 # 时间窗口选择对话框
 class TimeWindowDialog(QDialog):
@@ -323,9 +323,33 @@ class SeismicPhasePicker(QMainWindow):
         self.streaming_tab = QWidget()
         streaming_layout = QVBoxLayout(self.streaming_tab)
         
+        # 创建水平布局，左侧波形，右侧地图
+        streaming_h_layout = QHBoxLayout()
+        streaming_layout.addLayout(streaming_h_layout)
+        
+        # 创建左侧波形区域
+        waveform_container = QWidget()
+        waveform_container_layout = QVBoxLayout(waveform_container)
+        waveform_container_layout.setContentsMargins(0, 0, 0, 0)  # 移除边距
+        
         # 创建滚动波形显示组件
         self.scrolling_display = ScrollingWaveformDisplay(window_length=30.0)
-        streaming_layout.addWidget(self.scrolling_display)
+        waveform_container_layout.addWidget(self.scrolling_display)
+        
+        # 创建右侧地图区域
+        map_container = QWidget()
+        map_container_layout = QVBoxLayout(map_container)
+        map_container_layout.setContentsMargins(0, 0, 0, 0)  # 移除边距
+        
+        # 创建嵌入式地图小部件
+        self.embedded_map = EmbeddedMapWidget()
+        map_container_layout.addWidget(self.embedded_map)
+        
+
+        
+        # 将左右两侧添加到水平布局中，比例为7:3
+        streaming_h_layout.addWidget(waveform_container, 7)
+        streaming_h_layout.addWidget(map_container, 3)
         
         # 将标签页添加到标签页控件
         self.tab_widget.addTab(self.waveform_tab, "波形分析")
@@ -704,6 +728,20 @@ class SeismicPhasePicker(QMainWindow):
         if not events_df.empty:
             self.update_plot_with_events()
             self.status_label.setText(f"成功关联 {len(events_df)} 个地震事件")
+            
+            # 更新嵌入式地图
+            self.embedded_map.update_map(events_df, self.stations_df)
+            
+
+                
+            # 如果用户想查看地图，可以提示
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("地震事件关联成功")
+            msg.setText(f"成功关联 {len(events_df)} 个地震事件")
+            msg.setInformativeText("您可以点击'地图定位'按钮查看地震事件的位置分布，或在实时监测页面右侧查看地图。")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec_()
         else:
             self.status_label.setText("未找到关联事件")
             
@@ -964,12 +1002,17 @@ class SeismicPhasePicker(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"导出事件目录时出错: {str(e)}")
 
+
     def toggle_streaming_mode(self):
         """切换到实时模拟模式 - 在已加载波形上显示滑动窗口"""
         # 检查是否已加载波形数据
         if self.stream is None:
             QMessageBox.warning(self, "警告", "请先加载波形数据")
             return
+            
+        # 如果有关联的地震事件，更新地图
+        if self.events_df is not None and not self.events_df.empty:
+            self.embedded_map.update_map(self.events_df, self.stations_df)
             
         # 如果通道超过3个，弹出通道选择对话框
         if len(self.stream) > 3:

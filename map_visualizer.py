@@ -15,12 +15,14 @@ import os
 import folium
 from folium.plugins import HeatMap
 import pandas as pd
+import numpy as np
 import webbrowser
 from datetime import datetime
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                             QComboBox, QPushButton, QCheckBox, QGroupBox,
-                            QMessageBox, QFormLayout)
-from PyQt5.QtCore import Qt
+                            QMessageBox, QFormLayout, QWidget)
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
 from PyQt5.QtGui import QFont
 import tempfile
 
@@ -183,12 +185,22 @@ class MapVisualizerDialog(QDialog):
         # 添加地震事件标记
         if show_events:
             for _, event in self.events_df.iterrows():
-                # 由于数据中没有震级字段，使用相位数作为震级的近似值
-                # 相位数通常与震级相关 - 大地震通常会触发更多台站记录到相位
+                # 计算震级的改进方法，综合考虑相位数、深度和残差
                 picks = event.get('picks', 0)
-                # 根据相位数创建近似震级
-                # 将相位数范围(通常是4-20)映射到震级范围(3-7)
-                mag = 3.0 + min(picks / 5, 4.0)  # 限制最大震级为7.0
+                depth = event.get('depth', 10.0)
+                rms = event.get('rms', 0.5)  # 残差均方根，如果有的话
+                
+                # 基础震级计算 - 相位数是主要因素
+                base_mag = 2.5 + 0.6 * np.log10(max(picks, 1))
+                
+                # 深度调整因子 - 深度越大，调整越小（深源地震通常振幅较小但影响范围大）
+                depth_factor = 0.2 * np.log10(max(depth, 1.0) / 10.0)
+                
+                # 残差调整因子 - 残差越小，拟合越好，震级可能越大
+                rms_factor = -0.1 * min(rms, 1.0)  # 负相关，最大调整-0.1
+                
+                # 计算最终震级，并限制在合理范围内
+                mag = min(max(base_mag + depth_factor + rms_factor, 2.0), 8.0)
                 
                 # 根据震级选择颜色
                 if mag >= 6.0:
@@ -204,7 +216,7 @@ class MapVisualizerDialog(QDialog):
                 # 创建弹出窗口内容
                 popup_html = f"""
                 <div style="width:200px">
-                    <h4 style="color:{color};margin:0">M {mag:.1f} 地震</h4>
+                    <h4 style="color:darkgreen;margin:0">M {mag:.1f} 地震</h4>
                     <hr style="margin:3px">
                     <b>时间:</b> {datetime.fromtimestamp(event['time']).strftime('%Y-%m-%d %H:%M:%S')}<br>
                     <b>经度:</b> {event['longitude']:.4f}°<br>
@@ -254,12 +266,22 @@ class MapVisualizerDialog(QDialog):
             # 准备热力图数据
             heat_data = []
             for _, event in self.events_df.iterrows():
-                # 由于数据中没有震级字段，使用相位数作为震级的近似值
-                # 相位数通常与震级相关 - 大地震通常会触发更多台站记录到相位
+                # 使用与上面相同的改进震级计算方法
                 picks = event.get('picks', 0)
-                # 根据相位数创建近似震级
-                # 将相位数范围(通常是4-20)映射到震级范围(3-7)
-                mag = 3.0 + min(picks / 5, 4.0)  # 限制最大震级为7.0
+                depth = event.get('depth', 10.0)
+                rms = event.get('rms', 0.5)
+                
+                # 基础震级计算 - 相位数是主要因素
+                base_mag = 2.5 + 0.6 * np.log10(max(picks, 1))
+                
+                # 深度调整因子
+                depth_factor = 0.2 * np.log10(max(depth, 1.0) / 10.0)
+                
+                # 残差调整因子
+                rms_factor = -0.1 * min(rms, 1.0)
+                
+                # 计算最终震级
+                mag = min(max(base_mag + depth_factor + rms_factor, 2.0), 8.0)
                 # 使用震级作为强度
                 heat_data.append([event['latitude'], event['longitude'], mag])
                 
@@ -282,6 +304,195 @@ class MapVisualizerDialog(QDialog):
         
         # 保存地图为HTML文件
         m.save(self.map_file)
+
+
+class EmbeddedMapWidget(QWidget):
+    """嵌入式地图小部件
+    
+    可以嵌入到其他界面中的地图显示小部件，用于实时监测中显示地震事件位置。
+    """
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.events_df = None
+        self.stations_df = None
+        self.map_file = os.path.join(tempfile.gettempdir(), "embedded_map.html")
+        
+        # 设置布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)  # 移除边距
+        
+        # 创建标题标签
+        self.title_label = QLabel("地震事件地图")
+        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setFont(QFont("SimSun", 10, QFont.Bold))
+        layout.addWidget(self.title_label)
+        
+        # 创建网页视图组件
+        try:
+            # 直接导入QWebEngineView，不使用动态导入
+            from PyQt5.QtWebEngineWidgets import QWebEngineView
+            self.web_view = QWebEngineView()
+            self.web_view.setMinimumSize(300, 400)  # 设置最小尺寸
+            self.web_view.setZoomFactor(0.8)  # 设置缩放因子，使地图更好地适应容器
+            try:
+                # 尝试使用新版 API
+                self.web_view.page().settings().setAttribute(
+                    QWebEngineSettings.WebAttribute.ShowScrollBars, False
+                )
+            except:
+                try:
+                    # 尝试使用旧版 API
+                    self.web_view.page().settings().setAttribute(
+                        QWebEngineSettings.ShowScrollBars, False
+                    )
+                except:
+                    # 如果都失败，就不设置滚动条属性
+                    pass
+            layout.addWidget(self.web_view, 1)  # 1表示拉伸系数
+            self.has_web_engine = True
+
+        except Exception as e:
+            # 如果出现任何问题，使用替代显示方式
+            self.info_label = QLabel("地图加载失败")
+            self.info_label.setWordWrap(True)
+            self.info_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(self.info_label)
+            self.open_browser_btn = QPushButton("在浏览器中查看地图")
+            self.open_browser_btn.clicked.connect(self.open_map_in_browser)
+            layout.addWidget(self.open_browser_btn)
+            self.has_web_engine = False
+    
+    def update_map(self, events_df, stations_df=None):
+        """更新地图数据并刷新显示
+        
+        参数:
+            events_df: 地震事件数据框
+            stations_df: 台站信息数据框（可选）
+        """
+        if events_df is None or events_df.empty:
+            self.title_label.setText("无地震事件数据")
+            return
+            
+        self.events_df = events_df
+        self.stations_df = stations_df
+        
+        # 创建地图
+        self.create_map()
+        
+        # 更新标题
+        self.title_label.setText(f"地震事件地图 ({len(events_df)}个事件)")
+        
+        # 如果有WebEngine，加载地图
+        if self.has_web_engine:
+            try:
+                # 检查地图文件是否存在
+                if not os.path.exists(self.map_file):
+                    self.title_label.setText(f"地图文件不存在")
+                    return
+                    
+                # 检查文件大小
+                file_size = os.path.getsize(self.map_file)
+                
+                if file_size == 0:
+                    self.title_label.setText("地图文件为空")
+                    return
+                
+                # 创建URL并加载
+                map_url = QUrl.fromLocalFile(self.map_file)
+                self.web_view.load(map_url)
+                
+
+                
+            except Exception:
+                self.title_label.setText(f"地图加载失败")
+    
+    def open_map_in_browser(self):
+        """在默认浏览器中打开地图"""
+        if os.path.exists(self.map_file):
+            webbrowser.open(self.map_file)
+    
+    def create_map(self):
+        """创建地图并保存为HTML文件"""
+        if self.events_df is None or self.events_df.empty:
+            return
+            
+        
+        try:
+            # 计算事件的中心位置
+            center_lat = self.events_df['latitude'].mean()
+            center_lon = self.events_df['longitude'].mean()
+            
+            # 创建地图
+            m = folium.Map(
+                location=[center_lat, center_lon],
+                zoom_start=6,
+                tiles="OpenStreetMap"
+            )
+            
+            # 添加地震事件标记
+            for _, event in self.events_df.iterrows():
+                # 计算震级
+                picks = event.get('picks', 0)
+                depth = event.get('depth', 10.0)
+                rms = event.get('rms', 0.5)
+                
+                # 基础震级计算
+                base_mag = 2.5 + 0.6 * np.log10(max(picks, 1))
+                depth_factor = 0.2 * np.log10(max(depth, 1.0) / 10.0)
+                rms_factor = -0.1 * min(rms, 1.0)
+                mag = min(max(base_mag + depth_factor + rms_factor, 2.0), 8.0)
+                
+                # 根据震级选择颜色
+                if mag >= 6.0:
+                    color = 'red'
+                elif mag >= 5.0:
+                    color = 'orange'
+                else:
+                    color = 'beige'
+                    
+                # 根据深度调整标记大小
+                radius = min(8 + event['depth'] / 5, 20)  # 稍微小一点以适应嵌入式显示
+                
+                # 创建弹出窗口内容
+                popup_html = f"""
+                <div style="width:180px">
+                    <h4 style="color:darkgreen;margin:0">M {mag:.1f} 地震</h4>
+                    <hr style="margin:3px">
+                    <b>时间:</b> {datetime.fromtimestamp(event['time']).strftime('%Y-%m-%d %H:%M:%S')}<br>
+                    <b>经度:</b> {event['longitude']:.4f}°<br>
+                    <b>纬度:</b> {event['latitude']:.4f}°<br>
+                    <b>深度:</b> {event['depth']:.1f} km<br>
+                    <b>震级:</b> {mag:.1f}<br>
+                </div>
+                """
+                
+                # 添加标记
+                folium.CircleMarker(
+                    location=(event['latitude'], event['longitude']),
+                    radius=radius,
+                    color=color,
+                    fill=True,
+                    fill_color=color,
+                    fill_opacity=0.7,
+                    popup=folium.Popup(popup_html, max_width=250)
+                ).add_to(m)
+            
+            # 添加台站标记（如果有）
+            if self.stations_df is not None and not self.stations_df.empty:
+                if all(col in self.stations_df.columns for col in ['latitude', 'longitude', 'id']):
+                    for _, station in self.stations_df.iterrows():
+                        # 添加台站标记
+                        folium.Marker(
+                            location=(station['latitude'], station['longitude']),
+                            icon=folium.Icon(color='blue', icon='info-sign'),
+                            popup=f"台站: {station['id']}"
+                        ).add_to(m)
+            
+            # 保存地图为HTML文件
+            m.save(self.map_file)
+        except Exception as e:
+            self.title_label.setText(f"创建地图失败")
 
 
 class MapVisualizer:
