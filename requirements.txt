@@ -1,0 +1,13 @@
+# 地震相位检测与事件关联系统依赖
+PyQt5>=5.15.0
+numpy>=1.19.0
+matplotlib>=3.3.0
+pandas>=1.1.0
+obspy>=1.2.0
+seisbench>=1.0.0
+pyocto>=0.1.0
+folium>=0.12.0
+webbrowser
+tempfile
+datetime
+traceback
